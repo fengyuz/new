@@ -1,0 +1,351 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter* (Mac OS X) or *Ctrl+Shift+Enter* (Windows). 
+
+## 1. Defining a C++ class
+
+A simple C++ class can be defined in the following way:
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cmath>
+
+using namespace Rcpp;
+using namespace std;
+
+class cPoint {
+public:
+  // member variables
+  double x;
+  double y;
+
+  // constructor 
+  cPoint() { x = y = 0; }
+  cPoint(double _x, double _y) { x = _x; y = _y; }
+  
+  // member functions 
+  double getRadius() { return sqrt(x*x + y*y); }
+  double getAngle() { return x == 0 ? ( y > 0 ? 90 : -90 ) : atan(y/x) * 180 / M_PI; }
+  double getX() { return x; }
+  double getY() { return y; }
+  void print() { // in C++, Rprintf() can be changed to printf()
+    Rprintf("* x = %lg\n* y = %lg\n* radius = %lg\n* angle = %lg\n\n", getX(), getY(), getRadius(), getAngle() );
+  }
+};
+
+
+class pPoint {
+public:
+  // member variables
+  double radius;
+  double degree;
+  // constructor 
+  pPoint() { radius = degree = 0; }
+  pPoint(double x, double y) {
+    radius = sqrt(x*x + y*y);
+    degree = ( x == 0 ) ? (y > 0 ? 90 : -90) : atan(y/x) * 180 / M_PI;
+  }
+  // member functions
+  double getRadius() { return radius; }
+  double getAngle() { return degree; }
+  double getX() { return radius * cos(degree * M_PI / 180); }
+  double getY() { return radius * sin(degree * M_PI / 180); }
+  void print() { // in C++, Rprintf() can be changed to printf()
+    Rprintf("* x = %lg\n* y = %lg\n* radius = %lg\n* angle = %lg\n\n", getX(), getY(), getRadius(), getAngle() );
+  }
+};
+
+
+
+// [[Rcpp::export]]
+void testPoint() {
+  cPoint p1(3,4);
+  Rprintf("p1.radius = %lg\n",p1.getRadius());
+  Rprintf("p1.angle = %lg\n",p1.getAngle());
+  p1.print();
+  
+  cPoint p2(4,4);
+  Rprintf("p2.radius = %lg\n",p2.getRadius());
+  Rprintf("p2.angle = %lg\n",p2.getAngle());
+  p2.print();
+  
+  pPoint p3(4,4);
+  Rprintf("p3.radius = %lg\n",p3.getRadius());
+  Rprintf("p3.angle = %lg\n",p3.getAngle());
+  p3.print();
+}
+```
+
+Running the test code produces the following results:
+
+```{r}
+testPoint()
+```
+
+
+## 2. Understanding operator overloading
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cmath>
+
+using namespace Rcpp;
+using namespace std;
+
+class cPoint {
+public:
+  // member variables
+  double x;
+  double y;
+
+  // constructor 
+  cPoint() { x = y = 0; }
+  cPoint(double _x, double _y) { x = _x; y = _y; }
+  
+  // member functions 
+  double getRadius() { return sqrt(x*x + y*y); }
+  double getAngle() { return x == 0 ? ( y > 0 ? 90 : -90 ) : atan(y/x) * 180 / M_PI; }
+  double getX() { return x; }
+  double getY() { return y; }
+  void print() { // in C++, Rprintf() can be changed to printf()
+    Rprintf("* x = %lg\n* y = %lg\n* radius = %lg\n* angle = %lg\n\n", getX(), getY(), getRadius(), getAngle() );
+  }
+  
+  // operator overloading
+  cPoint operator+(const cPoint& rhs) {
+    cPoint newPoint(x, y);
+    newPoint.x += rhs.x;
+    newPoint.y += rhs.y;
+    return newPoint;
+  }
+};
+
+// [[Rcpp::export]]
+void testPoint() {
+  cPoint p1(1,2);
+  cPoint p2(2,2);
+  cPoint p3 = p1 + p2; // would this work?
+  p3.print();
+}
+```
+
+Running the test code produces the following results:
+
+```{r}
+testPoint()
+```
+
+## 3. Function objects
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cmath>
+
+using namespace Rcpp;
+using namespace std;
+
+double foo(double x, double y) {
+  return sqrt(x*x + y*y);
+}
+
+class bar {
+public:
+  double operator() (double x, double y) {
+    return sqrt(x*x + y*y);
+  }
+};
+
+double runFuncPtr(double (*f) (double, double), double x, double y) {
+  double val = f(x,y);
+  return val;
+}
+
+double runFuncObj(bar& f, double x, double y) {
+  double val = f(x,y);
+  return val;
+}
+
+// [[Rcpp::export]]
+double testPassingFunctionPtr(double x, double y) {
+  return runFuncPtr(foo, x, y);
+}
+
+// [[Rcpp::export]]
+double testPassingFunctionObj(double x, double y) {
+  bar barFunc;
+  return barFunc(x,y);
+}
+```
+
+Example of passing a function pointer involves multiple steps.
+```{r}
+testPassingFunctionPtr(3,4)
+```
+
+Passing a function object is slightly easier
+
+```{r}
+testPassingFunctionObj(3,4)
+```
+
+
+### 4. Abstract class
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cmath>
+
+using namespace Rcpp;
+using namespace std;
+
+// abstract class -- cannot create an instance
+class aPoint {
+public:
+  // these are pure virtual functions
+  virtual double getRadius() = 0; 
+  virtual double getAngle() = 0;
+  virtual double getX() = 0;
+  virtual double getY() = 0;
+  virtual string whoAmI() { return string("aPoint"); }
+  void print() {
+    Rprintf("* whoAmI = %s\n* x = %lg\n* y = %lg\n* radius = %lg\n* angle = %lg\n\n", whoAmI().c_str(), getX(), getY(), getRadius(), getAngle() );
+  }
+};
+  
+class cPoint : public aPoint {
+public:
+  double x;
+  double y;
+  cPoint() { x = y = 0; }
+  cPoint(double _x, double _y) { x = _x; y = _y; }
+  double getRadius() { return sqrt(x*x + y*y); }
+  double getAngle() { return x == 0 ? ( y > 0 ? 90 : -90 ) : atan(y/x) * 180 / M_PI; }
+  double getX() { return x; }
+  double getY() { return y; }
+  string whoAmI() { return string("cPoint"); }
+};
+
+class pPoint : public aPoint {
+public:
+  double radius;
+  double degree;
+  pPoint() { radius = degree = 0; }
+  pPoint(double x, double y) {
+    radius = sqrt(x*x + y*y);
+    degree = ( x == 0 ) ? (y > 0 ? 90 : -90) : atan(y/x) * 180 / M_PI;
+  }
+  double getRadius() { return radius; }
+  double getAngle() { return degree; }
+  double getX() { return radius * cos(degree * M_PI / 180); }
+  double getY() { return radius * sin(degree * M_PI / 180); }
+  string whoAmI() { return string("pPoint"); }
+};
+
+// [[Rcpp::export]]
+void testPoint() {
+  cPoint p1(3,4);
+  Rprintf("p1.radius = %lg\n",p1.getRadius());
+  Rprintf("p1.angle = %lg\n",p1.getAngle());
+  p1.print();
+  
+  aPoint* p2 = new cPoint(4,4);
+  Rprintf("p2.radius = %lg\n",p2->getRadius());
+  Rprintf("p2.angle = %lg\n",p2->getAngle());
+  p2->print();
+  
+  aPoint* p3 = new pPoint(4,4);
+  Rprintf("p3.radius = %lg\n",p3->getRadius());
+  Rprintf("p3.angle = %lg\n",p3->getAngle());
+  p3->print();
+}
+```
+
+Running this example will produce the same results
+
+```{r}
+testPoint()
+```
+
+### 5. Passing abstract function objects as arguments
+
+These abstract classes can be used to define flexible function objects.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cmath>
+
+using namespace std;
+using namespace Rcpp;
+
+class abstractFunc {
+public:
+  virtual double operator() (double x, double y) = 0;
+  // virtual destructor is required to use XPtr
+  virtual ~abstractFunc() {} 
+};
+
+class normalLLK : public abstractFunc {
+public:
+  NumericVector data;
+  normalLLK(NumericVector& _data) { data = _data; }
+  double operator() (double mu, double sigma2) {
+    int n = data.size();
+    double logLik = 0;
+    for(int i=0; i < n; ++i) {
+      logLik += (( data[i] - mu ) * (data[i] - mu ));
+    }
+    logLik = -0.5 * logLik / sigma2;
+    logLik -= ( n / 2.0 * log(2*M_PI) );
+    return logLik;
+  }
+};
+
+class betaLLK : public abstractFunc {
+public:
+  NumericVector data;
+  betaLLK(NumericVector& _data) { data = _data; }
+  double operator() (double alpha, double beta) {
+    int n = data.size();
+    double logLik = 0;
+    for(int i=0; i < n; ++i)
+      logLik += R::dbeta(data[i], alpha, beta, 1);
+    return logLik;
+  }  
+};
+
+// [[Rcpp::export]]
+XPtr<abstractFunc> getLLKFunc(string type, NumericVector obs) {
+  abstractFunc* fptr = NULL;
+  if ( type == "normal" )
+    fptr = new normalLLK(obs);
+  else if ( type == "beta" )
+    fptr = new betaLLK(obs);
+  else
+    stop("Cannot recognize the LLK function type ");
+  return XPtr<abstractFunc>(fptr);
+}
+
+// [[Rcpp::export]]
+double calculateLLK(XPtr<abstractFunc> p, double param1, double param2) {
+  abstractFunc& f = *p;
+  return f(param1,param2);
+}
+```
+
+```{r}
+x <- runif(100);
+y <- rbeta(100,2,2);
+fnormx <- getLLKFunc("normal",x)
+fbetax <- getLLKFunc("beta",x)
+fnormy <- getLLKFunc("normal",y)
+fbetay <- getLLKFunc("beta",y)
+print(calculateLLK(fnormx, 0, 1))
+print(calculateLLK(fbetax, 1, 1))
+print(calculateLLK(fbetax, 2, 2))
+print(calculateLLK(fbetay, 2, 2))
+```

@@ -1,0 +1,194 @@
+---
+title: "615.1.5 - Using STL containers"
+output: html_notebook
+---
+
+> This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. You may be viewing this notebook in a web browser as a form of static HTML file, or you may be interactively working with document inside an RStudio.
+You may walk through next chunk of the code interactively using *Cmd+Option(alt)+Backtick(`)* (in Mac OS X) or *Ctrl+Alt+N* (in Windows). You may also place your cursor inside a chunk and press *Cmd+Shift+Enter* (both in Mac OS X and in Windows), or press the small green button in the right-top-corner of each chunk.
+
+## 1. Using `<vector>` as a flexible-size array.
+
+STL provides a `std::vector<T>` class that can store an array of arbitrary type and an arbitrary size. While there are built-in arrays supported by C++ (which will be described later), `<vector>` provides more flexibility than built-in array data types. The key advantages is that it can change the size of array in run-time. For exampple:
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <iostream> // need to use std::cout
+#include <fstream>  // need to use std::ifstream
+#include <vector>   // need to use std::vector
+#include <string>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void loadWords(StringVector x) {
+  ifstream ifs(x[0]);
+  string s;
+  vector<string> vecstr; // a vector of string
+  while ( ifs >> s ) {
+    vecstr.push_back(s);
+  }
+  cout << "Finished loading " << vecstr.size() << " words" << endl;
+  cout << "The first word is " << vecstr[0] << endl;
+  cout << "The last word is " << vecstr[vecstr.size()-1] << endl;
+  cout << "The word in the middle is " << vecstr[vecstr.size()/2] << endl << endl;
+}
+```
+
+```{r}
+library(Rcpp)
+loadWords("dolch.314.txt")
+loadWords("common.2198.words.txt")
+loadWords("mit.10000.words.txt")
+```
+
+A nice thing about `vector` is that it can increase the size of the array one by one by calling `push_back()` member function. This is not possible with built-in array data type, where the size of array has to be determined at the time of definition.
+
+## 2. Using `std::pair` to connect between variables.
+
+STL provides `std::pair<T1,T2>` class STL can store an arbitrary pair of variables with different data types. This data type becomes useful for storing (key,value) pairs used in `std::map` class, which will be described below. `#include <utility>` is needed to use `std::pair`. 
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <utility>  // needed for std::pair
+#include <string>   // needed for std::string
+#include <iostream> // needed for std::cout
+
+using namespace Rcpp;
+using namespace std;
+
+// [[Rcpp::export]]
+void pairTest(string uniqname, int umid) {
+  // constructing a std::pair object
+  pair<string,int> name2id(uniqname, umid);
+  cout << "Name : " << name2id.first << endl;
+  cout << "UMID : " << name2id.second << endl;
+}
+```
+
+An example code can be
+```{r}
+library(Rcpp)
+pairTest("hmkang",12345678)
+```
+
+## 3. Using `std::map` to find most frequent 3-letter patterns in English words.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <string>
+#include <map>
+#include <fstream>
+#include <iostream>
+using namespace Rcpp;
+using namespace std;
+//[[Rcpp::export]]
+void topkmer(string filename, int k) {
+  ifstream ifs(filename.c_str()); // read a file
+  // return with error msg if file fails to open
+  if ( !ifs.is_open() ) {
+    cerr << "Cannot open file " << filename << endl;
+    return;
+  }
+  string s;
+  map<string,int> counts; // keeps count of each kmer
+  while ( ifs >> s ) { // read a word from the file
+    for(int i=0; i < (int)s.size()-k+1; ++i)
+      ++counts[s.substr(i,k)];
+  }
+  vector<string> top; // keeps most frequent kmers
+  int topcount = 0;   // keeps the count of top kmers
+  map<string,int>::iterator it;
+  for(it=counts.begin(); it != counts.end(); ++it) {
+    if ( it->second > topcount ) {
+      topcount = it->second; // update topcount
+      top.clear();  // clear if new topcount comes in 
+    }
+    if ( it->second >= topcount ) 
+      top.push_back(it->first); // add to the top list
+  }
+  cout << "These " << k << "-mers appeared " << topcount;
+  cout << " times" << endl;
+  for(int i=0; i < (int)top.size(); ++i)
+    cout << top[i] << endl;
+  cout << endl;
+}
+```
+
+
+```{r}
+library(Rcpp)
+topkmer("dolch.314.txt",2)
+topkmer("dolch.314.txt",3)
+topkmer("dolch.314.txt",4)
+topkmer("common.2198.words.txt",3)
+topkmer("common.2198.words.txt",4)
+topkmer("common.2198.words.txt",5)
+topkmer("common.2198.words.txt",6)
+topkmer("common.2198.words.txt",7)
+topkmer("mit.10000.words.txt",3)
+topkmer("mit.10000.words.txt",4)
+topkmer("mit.10000.words.txt",5)
+topkmer("mit.10000.words.txt",6)
+topkmer("mit.10000.words.txt",7)
+```
+
+## 4. Using `std::map` to make an Word Unscramble problem.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <string>
+#include <map>
+#include <iostream>
+#include <fstream>
+#include <algorithm>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void unscramble(string filename) {
+  ifstream ifs(filename.c_str()); // read file
+  // return if file fails to open
+  if ( !ifs.is_open() ) {
+    cerr << "Cannot open file " << filename << endl;
+    return;
+  }
+  string s;
+  map<string,vector<string> > bag2words; // string -> vector of strings
+  vector<string> words;
+  while ( ifs >> s ) { // read a word from the file
+    string b = s;      // clone the string
+    sort(b.begin(), b.end());  // ignore orderings of letters
+    bag2words[b].push_back(s); // map answer -> problems
+    words.push_back(s);
+  }
+  Environment base = Environment("package:base");
+  Function readline = base["readline"];
+  Function as_character = base["as.character"];
+  
+  cout << "Welcome to WORD UNSCRAMBLE 615!" << endl;
+  while(true) {
+    string q = words[rand() % words.size()]; // pick a word
+    sort(q.begin(), q.end());  // get the key value
+    vector<string> answers = bag2words[q]; // obtain all answers
+    random_shuffle(q.begin(), q.end());  // create a quiz
+    string input = as<string>(as_character(
+      readline("Unscramble " + q + " (or type q) : ")));
+    if ( input == "q" ) break;
+    bool correct = false;
+    for(int i=0; i < (int)answers.size(); ++i) {
+      if ( input == answers[i] ) 
+        correct = true;
+    }
+    if ( correct ) { cout << "Correct!" << endl; }
+    else { cout << "Sorry!" << endl; }
+    cout << "Here are all possible answers:";
+    for(int i=0; i < (int)answers.size(); ++i) {
+      cout << " " << answers[i];
+    }
+    cout << endl;
+  }
+}
+```
+
+```{r}
+library(Rcpp)
+unscramble("common.2198.words.txt")
+```

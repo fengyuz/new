@@ -1,0 +1,567 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter* (Mac OS X) or *Ctrl+Shift+Enter* (Windows). 
+
+## 1. Nelder-Mead implemented in R's optim()
+
+We start with an arbitrary 2d function.
+
+$$
+f(x,y) = 100(y-x^2)^2+(1-x)^2-1
+$$
+
+where an obvious minimal point is 
+
+$$
+\arg\min_{(x,y) \in \mathbb{R}^2} f(x,y)= f(1,1) = -1
+$$
+
+```{r}
+xvals <- (-20:200)/100
+yvals <- (-20:200)/100
+df <- data.frame(id=seq(1:(length(xvals)*length(yvals))))
+df$x=as.vector(matrix(xvals,length(xvals),length(yvals),byrow=FALSE))
+df$y=as.vector(matrix(xvals,length(xvals),length(yvals),byrow=TRUE))
+df$z=100*(df$y-df$x*df$x)^2+(1-df$x)^2-1
+library(ggplot2)
+ggplot(df, aes(x, y, z=z)) + 
+  geom_raster(aes(fill=log10(z+1.001))) + 
+  geom_contour(binwidth=25) +
+  scale_fill_gradientn(colors = terrain.colors(10))
+```
+
+```{r}
+## x is size 2 vector, foo is an arbitrary vector
+foo <- function(x) {
+  return(100*(x[2]-x[1]*x[1])*(x[2]-x[1]*x[1])+(1-x[1])*(1-x[1])-1)
+}
+
+itr <<- 0
+bar <- function(x) {
+  itr <<- itr + 1
+  ret <- 100*(x[2]-x[1]*x[1])*(x[2]-x[1]*x[1])+(1-x[1])*(1-x[1])-1
+  print(c(itr,x,ret))
+  return(ret)
+}
+
+print(optim(c(0,1.8),foo,"Nelder-Mead",control=list(reltol=1e-16)))
+print(optim(c(0.9,1.1),foo,"Nelder-Mead"))
+```
+
+
+## 2. Implementing a Nelder-Mead algorithm
+
+```{Rcpp}
+#include <Rcpp.h>
+
+using namespace std;
+using namespace Rcpp;
+
+// this is an example function object
+class myFunc {
+public:
+  double operator() (const NumericVector& x) {
+    return(100*(x[1]-x[0]*x[0])*(x[1]-x[0]*x[0])+(1-x[0])*(1-x[0])-1);
+  }
+};
+
+// template allows class F to replace arbitrary function object
+template <class F> 
+class simplex615 { // contains (dim+1)
+  // member variables;
+  int dim;          // dimension of data
+  NumericMatrix X;  // (ndims+1) simplex points of ndims points 
+  NumericVector Y;  // (ndims+1) evaluated point
+  NumericVector midPoint; // midpoint between ndims best points
+  NumericVector thruLine; // line starting from worst point thru midPoint
+  int idxLo, idxHi, idxNextHi, iter; // additional variables
+  
+  // check whether the values are within tolerance 
+  bool check_tol(double fmax, double fmin, double ftol) {
+    double delta = fabs(fmax - fmin); 
+    double accuracy = (fabs(fmax) + fabs(fmin)) * ftol;
+    return (delta < (accuracy + 1e-15));
+  }
+
+  // evaluate all function points at the beginning  
+  void evaluateFunction(F& foo) {
+    for(int i=0; i < dim+1; ++i) {
+      //Rprintf("foo i=%d\n",i);
+      Y[i] = foo(X(i,_));
+      ++iter;
+    }
+  }
+  
+  // evaluate extreme values determine lo/hi/nextHi indices
+  void evaluateExtremes() {
+    if ( Y[0] > Y[1] ) {
+      idxHi = 0; idxLo = idxNextHi = 1;
+    }
+    else {
+      idxHi = 1; idxLo = idxNextHi = 0;
+    }
+    // make idxLo to point the lowest point,
+    // make idxHi to the highest, nextHi to second highest.
+    for(int i=2; i < dim+1; ++i) {
+      if ( Y[i] <= Y[idxLo] ) idxLo = i;
+      else if ( Y[i] > Y[idxHi] ) {
+        idxNextHi = idxHi;
+        idxHi = i;
+      }
+      else if ( Y[i] > Y[idxNextHi] ) idxNextHi = i;
+    }
+  }
+  
+  // calculate midPoint and thruLine
+  void prepareUpdate() {
+    std::fill(midPoint.begin(), midPoint.end(), 0);
+    for(int i=0; i < dim+1; ++i) {
+      if ( i != idxHi ) { // exclude the worst 
+        for(int j=0; j < dim; ++j) 
+          midPoint[j] += X(i,j); 
+      } 
+    }
+    for(int j=0; j < dim; ++j) {
+      midPoint[j] /= dim;   // take average
+      // direction for optimization
+      thruLine[j] = X(idxHi,j) - midPoint[j]; 
+    }
+  }
+  
+  // evaluate next point and update lo/hi/nexthi indices
+  bool updateSimplex(F& foo, double scale) {
+    NumericVector nextPoint(dim); // set next point to evaluate
+    for(int i=0; i < dim; ++i)    
+      nextPoint[i] = midPoint[i] + scale * thruLine[i];
+    // evaluate the function
+    double fNext = foo(nextPoint); ++iter;
+    if ( fNext < Y[idxHi] ) {     // exchange with worst point
+      for(int i=0; i < dim; ++i)    
+        X(idxHi,i) = nextPoint[i];
+      Y[idxHi] = fNext;
+      return true;  // if updated, return true
+    }
+    else {
+      return false;
+    }
+  }
+  
+  // perform multiple contraction
+  void contractSimplex(F& foo) {
+    for(int i=0; i < dim+1; ++i) {
+      if ( i != idxLo ) { // update every point but the best
+        for(int j=0; j < dim; ++j) {
+          X(i,j) = 0.5*( X(idxLo,j) + X(i,j) );
+          Y[i] = foo(X(i,_)); iter++;
+        }
+      }
+    }
+  }
+
+public:
+  // Constructor, initializing member variables
+  simplex615(NumericVector& startPoint, double stepSize = 1.0) :
+    dim(startPoint.size()), 
+    X(dim+1, dim),
+    Y(dim+1),
+    midPoint(dim),
+    thruLine(dim)
+  {
+    // initialize all X to startPoint;
+    int dim = startPoint.size();
+    for(int i=0; i < dim+1; ++i) {
+      for(int j=0; j < dim; ++j) {
+        X(i,j) = startPoint[j];
+        if ( i == j ) X(i,j) += stepSize; // create a simplex
+      }
+    }
+  }
+  
+  // main function to run the Nelder-Mead algorithm
+  void amoeba(F& foo, double tol) {
+    int MAX_ITER = 1000;
+    evaluateFunction(foo); // evaluate all points
+    for(iter=0; iter < MAX_ITER;) {          // repeat until convergence
+      evaluateExtremes();  // set lo/hi/nexthi
+      prepareUpdate();     // compute midPoint, thruLine
+      // stop if below tolerance
+      if ( check_tol(Y[idxHi],Y[idxLo],tol) ) break;
+      updateSimplex(foo, -1.0); // reflection
+      if ( Y[idxHi] < Y[idxLo] ) updateSimplex(foo, -2.0); // expansion
+      else if ( Y[idxHi] >= Y[idxNextHi] ) { 
+        if ( !updateSimplex(foo, 0.5) ) // 1d-contraction
+          contractSimplex(foo);         // multiple contraction
+      }
+    }
+  }
+  // return key values
+  NumericVector xmin() {  return X(idxLo,_); }
+  double ymin() { return Y[idxLo]; }
+  int niter() { return iter; }
+};
+
+// [[Rcpp::export]]
+List runNelderMead(NumericVector startPoint, double initStep, double tol) {
+  myFunc foo; // make an instance of function object
+  simplex615<myFunc> simplex(startPoint, initStep); // set parameters
+  simplex.amoeba(foo, tol);   // run simplex method 
+  return( List::create(Named("ymin")=simplex.ymin(), 
+                       Named("xmin")=simplex.xmin(),
+                       Named("iter")=simplex.niter()
+                       ));
+}
+```
+
+
+Here are some examples of testing the algorithm for the function described above.
+
+```{r}
+runNelderMead(c(0,1.8), 1.0, 1e-6)
+runNelderMead(c(0.9,1.1), 1.0, 1e-6)
+runNelderMead(c(0.9,1.1), 0.15, 1e-6)
+```
+
+## 3. Applying Nelder-Mead on Gaussian Mixture using R
+
+```{r}
+## x is observed data
+## pis, mus, sds are k-dimensional vectors
+llk.gmm <- function(x, pis, mus, sds) {
+  ## make x to be n x k matrix
+  k <- length(pis)
+  n <- length(x)
+  llks <- rowSums( 
+            matrix(pis, n, k, byrow=TRUE) * 
+              dnorm( matrix(x, n, k), 
+                     matrix(mus, n, k, byrow=TRUE), 
+                     matrix(sds, n, k, byrow=TRUE) ) )
+  return (sum(log(llks)))
+}
+
+mle.gmm <- function(x, start) {
+  k <- (length(start)+1)/3
+  r <- optim( start, function(y)  {
+    0-llk.gmm(x, ## observed data
+              c(y[1:(k-1)],1-sum(y[1:(k-1)])), ## pis 
+              y[k:(2*k-1)],    ## mus
+              y[(2*k):(3*k-1)])  ## sds
+  }, control=list(maxit=10000))
+  return(r)
+}
+
+x <- c( rnorm(1000), rnorm(500) + 5 )  ## 1:2 mixture of N(0,1) and N(5,1)
+mle.gmm(x, c(0.5, -4, 6, sd(x), sd(x)))
+```
+
+## 4. Reparametrizing to avoid boundary condition.
+
+To avoid boundary condition, transformation between parameter space can be performed.
+
+```{r}
+## x is observed data
+## pis, mus, sds are k-dimensional vectors
+llk.gmm <- function(x, pis, mus, sds) {
+  ## make x to be n x k matrix
+  k <- length(pis)
+  n <- length(x)
+  llks <- rowSums( 
+            matrix(pis, n, k, byrow=TRUE) * 
+              dnorm( matrix(x, n, k), 
+                     matrix(mus, n, k, byrow=TRUE), 
+                     matrix(sds, n, k, byrow=TRUE) ) )
+  return (sum(log(llks)))
+}
+
+## convert k dimensional pis to k-1 unconstrained dimensions
+restricted2free <- function(pis) {
+  k <- length(pis)
+  ret <- vector(length=k-1)
+  res <- 1.0;
+  for(i in 1:(k-1)) {
+    v <- res * pis[i];
+    ret[i] <- log(v/(1-v))
+    res <- res * (1-pis[i])
+  }
+  return(ret);
+}
+
+## convert k-1 unconstrained parameters to pi
+free2restricted <- function(x) {
+  k <- length(x)+1
+  pis <- vector(length=k)
+  res <- 1.0;
+  for(i in 1:(k-1)) {
+    v <- 1/(1+exp(0-x[i]))
+    pis[i] <- res * v
+    res <- res * (1-v)
+  }
+  pis[k] <- res
+  return(pis)
+}
+
+mle.gmm2 <- function(x, pi0, mu0, sd0) {
+  k <- length(pi0)
+  start <- c(restricted2free(pi0), mu0, log(sd0))
+  r <- optim( start, function(y)  {
+    pis <- free2restricted(y[1:(k-1)])
+    sds <- exp(y[(2*k):(3*k-1)])
+    0-llk.gmm(x, ## observed data
+              pis,                 ## new pis 
+              y[k:(2*k-1)],    ## mus
+              sds)                 ## sds
+  }, control=list(maxit=10000) )
+  return(list(pis=free2restricted(r$par[1:(k-1)]),
+              mus=r$par[k:(2*k-1)],sds=exp(r$par[(2*k):(3*k-1)])))
+}
+
+x <- c( rnorm(1000), rnorm(500) + 5 )  ## 2:1 mixture of N(0,1) and N(5,1)
+mle.gmm2(x, c(0.5, 0.5), c(-4, 6), c(sd(x), sd(x)) )
+```
+
+## 5. Running on mixture of normals in C++
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cmath>
+
+using namespace std;
+using namespace Rcpp;
+
+class normMixLLK {
+public:
+  int numComponents;
+  NumericVector data;
+  
+  normMixLLK(int k, NumericVector& y) {
+    numComponents = k;
+    data = y;
+  }
+  
+  
+  static void priors2params(const NumericVector& priors, NumericVector& x) {
+    double p = 1.0;
+    int k = priors.size();
+    for(int i=0; i < k-1; ++i) {
+      double y = priors[i] / p;
+      x[i] = log(y/(1.0-y));
+      p *= (1-priors[i]);
+    }
+    x[k-1] = log(p/(1.0-p));
+  }
+  
+  // change real values to prior scales
+  // convert each observations  x1, x2, ..., xn
+  //            to logit scale, q1, q2, ..., qn
+  //            and use         q1, (1-q1)*q2, (1-q1)*(1-q2)*q3, ..., 
+  //            to make sure that things adds up to 1 or less
+  static void assignPriors(const NumericVector& x, NumericVector& priors) {
+    double p = 1.;
+    int k = priors.size();
+    for(int i=0; i < k-1; ++i) {
+      double invLogit = 1.0/(1.0 + exp(0-x[i]));
+      priors[i] = p*invLogit;
+      p *= (1.0 - invLogit);
+    }
+    priors[k-1] = p;
+  }
+  
+  double operator() (const NumericVector& x) {
+    NumericVector priors(numComponents);
+    NumericVector means(numComponents);
+    NumericVector sigmas(numComponents);
+    
+    assignPriors(x, priors);
+
+    means = x[Range(numComponents-1, 2*numComponents-2)];
+    sigmas = x[Range(2*numComponents-1, 3*numComponents-2)];
+
+    int n = data.size();
+    double llk = 0;
+    for(int i=0; i < n; ++i) {
+      double sum = 0;
+      for(int j=0; j < numComponents; ++j)
+          sum += (priors[j] * R::dnorm(data[i], means[j], exp(sigmas[j]), 0));
+      if ( sum == 0 ) sum = 1e-300;
+      llk += log(sum);
+    }
+    return 0-llk;
+  }
+};
+
+// template allows class F to replace arbitrary function object
+template <class F> 
+class simplex615 { // contains (dim+1)
+  // member variables;
+  int dim;          // dimension of data
+  NumericMatrix X;  // (ndims+1) simplex points of ndims points 
+  NumericVector Y;  // (ndims+1) evaluated point
+  NumericVector midPoint; // midpoint between ndims best points
+  NumericVector thruLine; // line starting from worst point thru midPoint
+  int idxLo, idxHi, idxNextHi, iter; // additional variables
+  
+  // check whether the values are within tolerance 
+  bool check_tol(double fmax, double fmin, double ftol) {
+    double delta = fabs(fmax - fmin); 
+    double accuracy = (fabs(fmax) + fabs(fmin)) * ftol;
+    return (delta < (accuracy + 1e-15));
+  }
+
+  // evaluate all function points at the beginning  
+  void evaluateFunction(F& foo) {
+    for(int i=0; i < dim+1; ++i) {
+      //Rprintf("foo i=%d\n",i);
+      Y[i] = foo(X(i,_));
+      ++iter;
+    }
+  }
+  
+  // evaluate extreme values determine lo/hi/nextHi indices
+  void evaluateExtremes() {
+    if ( Y[0] > Y[1] ) {
+      idxHi = 0; idxLo = idxNextHi = 1;
+    }
+    else {
+      idxHi = 1; idxLo = idxNextHi = 0;
+    }
+    // make idxLo to point the lowest point,
+    // make idxHi to the highest, nextHi to second highest.
+    for(int i=2; i < dim+1; ++i) {
+      if ( Y[i] <= Y[idxLo] ) idxLo = i;
+      else if ( Y[i] > Y[idxHi] ) {
+        idxNextHi = idxHi;
+        idxHi = i;
+      }
+      else if ( Y[i] > Y[idxNextHi] ) idxNextHi = i;
+    }
+  }
+  
+  // calculate midPoint and thruLine
+  void prepareUpdate() {
+    std::fill(midPoint.begin(), midPoint.end(), 0);
+    for(int i=0; i < dim+1; ++i) {
+      if ( i != idxHi ) { // exclude the worst 
+        for(int j=0; j < dim; ++j) 
+          midPoint[j] += X(i,j); 
+      } 
+    }
+    for(int j=0; j < dim; ++j) {
+      midPoint[j] /= dim;   // take average
+      // direction for optimization
+      thruLine[j] = X(idxHi,j) - midPoint[j]; 
+    }
+  }
+  
+  // evaluate next point and update lo/hi/nexthi indices
+  bool updateSimplex(F& foo, double scale) {
+    NumericVector nextPoint(dim); // set next point to evaluate
+    for(int i=0; i < dim; ++i)    
+      nextPoint[i] = midPoint[i] + scale * thruLine[i];
+    // evaluate the function
+    double fNext = foo(nextPoint); ++iter;
+    if ( fNext < Y[idxHi] ) {     // exchange with worst point
+      for(int i=0; i < dim; ++i)    
+        X(idxHi,i) = nextPoint[i];
+      Y[idxHi] = fNext;
+      return true;  // if updated, return true
+    }
+    else {
+      return false;
+    }
+  }
+  
+  // perform multiple contraction
+  void contractSimplex(F& foo) {
+    for(int i=0; i < dim+1; ++i) {
+      if ( i != idxLo ) { // update every point but the best
+        for(int j=0; j < dim; ++j) {
+          X(i,j) = 0.5*( X(idxLo,j) + X(i,j) );
+          Y[i] = foo(X(i,_)); iter++;
+        }
+      }
+    }
+  }
+
+public:
+  // Constructor, initializing member variables
+  simplex615(NumericVector& startPoint, double stepSize = 1.0) :
+    dim(startPoint.size()), 
+    X(dim+1, dim),
+    Y(dim+1),
+    midPoint(dim),
+    thruLine(dim)
+  {
+    // initialize all X to startPoint;
+    int dim = startPoint.size();
+    for(int i=0; i < dim+1; ++i) {
+      for(int j=0; j < dim; ++j) {
+        X(i,j) = startPoint[j];
+        if ( i == j ) X(i,j) += stepSize; // create a simplex
+      }
+    }
+  }
+  
+  // main function to run the Nelder-Mead algorithm
+  void amoeba(F& foo, double tol) {
+    int MAX_ITER = 1000;
+    evaluateFunction(foo); // evaluate all points
+    for(iter=0; iter < MAX_ITER;) {          // repeat until convergence
+      evaluateExtremes();  // set lo/hi/nexthi
+      prepareUpdate();     // compute midPoint, thruLine
+      // stop if below tolerance
+      if ( check_tol(Y[idxHi],Y[idxLo],tol) ) break;
+      updateSimplex(foo, -1.0); // reflection
+      if ( Y[idxHi] < Y[idxLo] ) updateSimplex(foo, -2.0); // expansion
+      else if ( Y[idxHi] >= Y[idxNextHi] ) { 
+        if ( !updateSimplex(foo, 0.5) ) // 1d-contraction
+          contractSimplex(foo);         // multiple contraction
+      }
+    }
+  }
+  // return key values
+  NumericVector xmin() {  return X(idxLo,_); }
+  double ymin() { return Y[idxLo]; }
+  int niter() { return iter; }
+};
+
+// [[Rcpp::export]]
+List runGMMSimplex(NumericVector data, int k, NumericVector pi0, NumericVector mu0, NumericVector sigma0, double tol) {
+  // start with uniform priors 
+  normMixLLK foo(k, data); // make an instance of function object
+  NumericVector startPoint(3*k-1);
+  normMixLLK::priors2params(pi0, startPoint);
+  startPoint[Range(k-1, 2*k-2)] = mu0;
+  for(int i=0; i < k; ++i)  
+    startPoint[i+2*k-1] = log(sigma0[i]);
+
+  simplex615<normMixLLK> simplex(startPoint); // set parameters
+  simplex.amoeba(foo, tol);   // run simplex method
+  
+  NumericVector pi(k);
+  NumericVector mu(k);
+  NumericVector sigma(k);
+  const NumericVector& xmin = simplex.xmin();
+  normMixLLK::assignPriors(xmin, pi);
+  mu = xmin[Range(k-1,2*k-2)];
+  for(int i=0; i < k; ++i) 
+    sigma[i] = exp(xmin[2*k-1+i]);
+  
+  return( List::create(Named("ymin")=simplex.ymin(), 
+                       Named("pi.min")=pi,
+                       Named("mu.min")=mu,
+                       Named("sigma.min")=sigma,
+                       Named("iter")=simplex.niter()
+                       ));
+}
+```
+
+Here are some examples of testing the algorithm for a simple 2:1 mixture of N(0,1) and N(5,1). 
+
+```{r}
+x <- c( rnorm(1000), rnorm(500) + 5 )
+runGMMSimplex(x, 2, c(0.5, 0.5), c(-4, 6), c(1,1), 1e-6)
+```

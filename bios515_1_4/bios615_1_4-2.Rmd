@@ -1,0 +1,131 @@
+---
+title: "615.1.4 - File I/O, Array, and String in C++"
+output: html_notebook
+---
+
+> This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. You may be viewing this notebook in a web browser as a form of static HTML file, or you may be interactively working with document inside an RStudio.
+You may walk through next chunk of the code interactively using *Cmd+Option(alt)+Backtick(`)*. You may also place your cursor inside a chunk and press *Cmd+Shift+Enter*, or press the small green button in the right-top-corner of each chunk.
+
+## 1. Using `<fstream>` to handle file input/output
+
+Reading and writing files can be handled by including `<fstream>` in the header file. The use of `std::ifstream` and `std::ofstream` are similar to the use of `std::cin` and `std::cout`. The following Rcpp example code illustrates how file can be read using `std::ifstream`.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+int countWords(string filename) {
+  ifstream ifs(filename.c_str());
+  string s;
+  int count = 0;
+  while ( ifs >> s )
+    ++count;
+  ifs.close();
+  return count;
+}
+```
+
+Including this `Rcpp` code using `sourceCpp([/file/path/filename.cpp])` will enable using `countWords` function inside `R`. (but we don't need to do it inside R Noteook). For example, to count the number of lines in the file name `dolch.314.txt` (which is located in the same directory with this notebook) can be done by
+
+```{r}
+library(Rcpp)
+countWords('dolch.314.txt')
+```
+
+## 2. Understanding arrays in C++.
+
+Conceptually, an array should be a collection of elements with a certain data type. The array data type in C++ appears to be defined as such. However, an array C/C++ is equivalent to an "address"
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <iostream> // needed for std::cout
+#include <iomanip>  // needed for std::hex, std::dec
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void arrayTest() {
+  int primes[10] = {2,3,5,7,11,13,17,19,23,29};
+  for(int i=0; i < 10; ++i) {
+    cout << "&primes[" << dec << i << "] = " << hex << &primes[i] << "\t";
+    cout << "primes[" << dec << i << "] = " << dec << primes[i] << endl; 
+  }
+  cout << "primes = " << hex << primes << dec << endl;
+}
+```
+
+
+```{r}
+library(Rcpp)
+arrayTest()
+```
+
+
+## 3. Tailored output using `printf()` function
+
+`printf()` function, which requires to include `<cstdio>` is a C-style alternative of `std::cout` in `<iostream>`, bringing potentially advantageous features than `std::cout`, especially for tailored output. Here are some examples.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cstdio>
+// [[Rcpp::export]]
+void printfTest() {
+  float f = 0.1 + 0.2;
+  double d = 0.1 + 0.2;
+  int m = -1, n = 33;
+  printf("Printing integer %d, and unsigned integer %u\n", m, m);
+  printf("Printing decimal %d, octal %o, hex %x integers\n", n, n, n);
+  printf("Printing the address of f %p and d %p variables\n", &f, &d);
+  printf("Printing a character as is %c or as an ASCII code %u\n", 'H', 'H');
+  printf("Printing values of f %f and d %lf in a fixed-point format\n", f, d);
+  printf("Printing values of f %e and d %le in a scientific format\n", f, d);
+  printf("Printing values of f %g and d %lg in a flexible format\n", f, d);
+  printf("Printing values of f %08.20f and\n d %08.20lf in an "
+         "advanced fixed-point format\n", f, d);
+}
+```
+
+A running example is
+```{r}
+library(Rcpp)
+printfTest()
+```
+
+## 4. Understanding C++ style string `std::string` and C style string `char*`
+
+C style string is an array of `char`, so it merely contains an address of the first character. That's why C style string is represented as `char*`. 
+
+C style string is sometimes represented as `const char*` rather than `char*`. The difference between the two is that the former does not allow modification of the elements in the array, while the latter allows modification.
+
+C++ style string, `std::string`, is designed to behave like a other user-defined objects, rather than like an address. C++ allows automatic conversion from `char*` or `const char*` to `std::string` for the convenience purpose (because any double-quoted string is actually in C style), but `std::string` object itself is not considered as an `address`. To view `std::string` as if it is a C-style string, `.c_str()` member function has to be explicitly called.
+
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cstdio> // needed for std::cout
+#include <string> // needed for std::string
+using namespace std;
+// [[Rcpp::export]]
+void stringTest() {
+  const char* s1 = "Hello";
+  char s2[6] = {'H','e','l','l','o','\0'};
+  string s3("Hello");
+  const char* s4 = s2;
+  const char* s5 = s3.c_str();
+  
+  printf("%p\t%p\t%c\n", &s1, s1, s1[0]);
+  printf("%p\t%p\t%c\n", &s2, s2, s2[0]);
+  printf("%p\t%p\t%c\n", &s3, s3.c_str(), s3[0]);
+  printf("%p\t%p\t%c\n", &s4, s4, s4[0]);
+  printf("%p\t%p\t%c\n", &s5, s5, s5[0]);
+}
+```
+
+
+```{r}
+library(Rcpp)
+stringTest()
+```

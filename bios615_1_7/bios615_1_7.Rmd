@@ -1,0 +1,65 @@
+---
+title: "615.1.7 - Memory managenent"
+output: html_notebook
+---
+
+> This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. You may be viewing this notebook in a web browser as a form of static HTML file, or you may be interactively working with document inside an RStudio.
+You may walk through next chunk of the code interactively using *Cmd+Option(alt)+Backtick(`)* (in Mac OS X) or *Ctrl+Alt+N* (in Windows). You may also place your cursor inside a chunk and press *Cmd+Shift+Enter* (both in Mac OS X and in Windows), or press the small green button in the right-top-corner of each chunk.
+
+## 1. Using `Rcpp::XPtr` to pass heap-allocated objects between R and C++.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <string>
+#include <vector>
+#include <fstream>
+#include <algorithm>
+#include <map>
+
+using namespace Rcpp;
+using namespace std;
+
+typedef map< string,vector<string> > s2vs_t;
+typedef map< string,vector<string> >::iterator s2vs_it_t;
+
+// [[Rcpp::export]]
+XPtr<s2vs_t> make_word_map(string filename) {
+  ifstream ifs(filename.c_str());
+  string s;
+  s2vs_t* p = new s2vs_t;
+  while( ifs >> s ) {
+    string q = s;
+    sort(q.begin(), q.end()); // lexicographical ordering
+    (*p)[q].push_back(s);
+  }
+  return XPtr<s2vs_t>(p);
+}
+
+// [[Rcpp::export]]
+List pick_a_random_quiz(XPtr<s2vs_t> p) {
+  s2vs_it_t it = p->begin();
+  advance(it, rand() % p->size());
+  StringVector sv(it->second.size()+1);
+  string q = it->first;
+  random_shuffle(q.begin(), q.end());
+  return List::create(Named("clue")=q,Named("ans")=it->second);
+}
+
+// [[Rcpp::export]]
+List multiple_answer_words(XPtr<s2vs_t> p, int num_ties) {
+  List ret;
+  for(s2vs_it_t it = p->begin(); it != p->end(); ++it) {
+    if ( it->second.size() >= num_ties ) 
+        ret.push_back(List::create(Named("key")=it->first,
+                                   Named("words")=it->second));
+  }
+  return ret;
+}
+```
+
+```{r}
+ptr <- make_word_map("nltk.235886.words.txt")
+pick_a_random_quiz(ptr)
+pick_a_random_quiz(ptr)
+multiple_answer_words(ptr,8)
+```

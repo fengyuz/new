@@ -1,0 +1,43 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter* (Mac OS X) or *Ctrl+Shift+Enter* (Windows). 
+
+## 1. Gaussian Mixture E-M algorithm
+
+
+```{r}
+em <- function(x, k, max.iter = 1000, tol = 1e-8) {
+    n <- length(x)
+    pis <- rep(1/k, k)   ## start with uniform priors
+    mus <- sample(x,k)   ## start with random points as mean
+    sds <- rep(sd(x), k) ## start with pooled variance
+    W <- t(rmultinom(n,1,pis))  ## W is n x k matrix     
+    prevLLK <- -1e300
+    for(i in 1:max.iter) {
+        ## E-step, calculate pi_j * Pr(x_i|mu_j,sd_j)
+        W <- matrix(pis,n,k,byrow=TRUE) * dnorm(matrix(x,n,k),
+                  matrix(mus,n,k,byrow=TRUE),matrix(sds,n,k,byrow=TRUE));
+        Wsum <- rowSums(W)
+        W <- W / matrix(Wsum, n, k)  ## calculate Pr(Z|x)
+        llk <- sum(log(Wsum))        ## calculate likelihood
+        if ( llk - prevLLK < tol ) { break }
+        prevLLK <- llk
+        ## M-step
+        pis <- colSums(W) / n                
+        mus <- (x %*% W) / (pis * n)
+        sds <- sqrt(colSums((matrix(x, n, k) - matrix(mus, n, k, byrow=TRUE))^2 * W) / (pis * n))            
+    }
+    return(list(llk=llk, pis=pis, mus=mus, sds=sds,iter=i))
+}
+
+x <- c(rnorm(1000), rnorm(500)+5)
+em(x,2)
+```
+
+
+## 2. Implementing a Nelder-Mead algorithm

@@ -1,0 +1,56 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter* (Mac OS X) or *Ctrl+Shift+Enter* (Windows). 
+
+## 1. Importance sampling for normal CDF
+
+```{r}
+## pnormUpper() function to calculate Pr[x>t] using n random samples
+pnormUpper <- function(n, t) { 
+  lo <- t
+  hi <- t + 50 ## w=50 was used hi is a reasonably large number
+  ## accept-reject sampling
+  r <- rnorm(n) ## random sampling from N(0,1)
+  v1 <- sum(r > t)/n  ## count how many meets the condition
+  ## Monte-Carlo integration
+  u <- runif(n,lo,hi) ## uniform sampling [t,t+50] 
+  v2 <- mean(dnorm(u))*(hi-lo) ## Monte-Carlo integration
+  ## importance sampling using N(t,1)
+  g <- rnorm(n,t,1) ## sample from N(t,1)
+  v3 <- sum( (g > t) * dnorm(g)/dnorm(g,t,1)) / n; ## take a weighted average
+  return (c(v1,v2,v3)) ## return three values 
+}
+
+r <- 100   ## number of repeated experiments
+B <- 1000  ## size of boostrap
+t <- 10    ## Pr(t>10)
+gold <- pnorm(t,lower.tail=FALSE) ## gold standard answer
+emp <- matrix(nrow=r,ncol=3) ## matrix containing empirical answers
+for(i in 1:r) { emp[i,] <- pnormUpper(B,t) } ## repeat r times
+m <- colMeans(emp)
+s <- apply(emp,2,sd)
+rst <- list(gold.standard=gold,
+            estimates=m,
+            abs.bias=m-gold,
+            abs.std=s,
+            rel.bias=(m-gold)/gold,
+            rel.std=s/gold)
+print(rst)
+
+B <- 10000
+for(i in 1:r) { emp[i,] <- pnormUpper(B,t) } ## repeat r times
+m <- colMeans(emp)
+s <- apply(emp,2,sd)
+rst <- list(gold.standard=gold,
+            estimates=m,
+            abs.bias=m-gold,
+            abs.std=s,
+            rel.bias=(m-gold)/gold,
+            rel.std=s/gold)
+print(rst)
+```

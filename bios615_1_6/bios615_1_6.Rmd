@@ -1,0 +1,282 @@
+---
+title: "615.1.6 - Passing by value, reference, or pointer"
+output: html_notebook
+---
+
+> This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. You may be viewing this notebook in a web browser as a form of static HTML file, or you may be interactively working with document inside an RStudio.
+You may walk through next chunk of the code interactively using *Cmd+Option(alt)+Backtick(`)* (in Mac OS X) or *Ctrl+Alt+N* (in Windows). You may also place your cursor inside a chunk and press *Cmd+Shift+Enter* (both in Mac OS X and in Windows), or press the small green button in the right-top-corner of each chunk.
+
+## 1. Passing arguments in R.
+
+Below is the example of passing arguments in R
+
+```{r}
+valR <- function(x) {
+  x <- x+1
+}
+
+vecR <- function(x) {
+  x[1] <- x[1] + 1
+}
+
+y <- 1
+valR(y)
+print(y)
+
+z <- c(1,2)
+vecR(z)
+print(z)
+```
+
+## 2. Passing arguments in C++
+
+Below is the example of passing argument within C++ only
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <vector>
+#include <iostream>
+using namespace Rcpp;
+using namespace std;
+
+void valC(double x) {
+  ++x;
+}
+
+void vecC(vector<double> x) {
+  ++x[0];
+}
+
+// [[Rcpp::export]]
+void arg_test() {
+  double y = 1;
+  vector<double> z(2);
+  z[0] = 1; z[1] = 2;
+  
+  valC(y);
+  cout << y << endl;
+  
+  vecC(z);
+  cout << z[0] << " " << z[1] << endl;
+}
+```
+
+```{r}
+arg_test();
+```
+
+## 3. Passing arguments in Rcpp
+
+Below is the example of passing arguments between R and C++
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <vector>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void valRcpp(double x) {
+  ++x;
+}
+
+// [[Rcpp::export]]
+void vecRcpp(NumericVector x) {
+  ++x[0];
+}
+```
+
+```{r}
+y <- 1
+valRcpp(y)
+print(y)
+
+z <- c(1,2)
+vecRcpp(z)
+print(z)
+```
+
+## 4. Passing arguments by reference in C++
+
+Below is the example of passing arguments by reference in C++
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <vector>
+#include <iostream>
+using namespace Rcpp;
+using namespace std;
+
+void valCRef(double& x) {
+  ++x;
+}
+
+void vecCRef(vector<double>& x) {
+  ++x[0];
+}
+
+// [[Rcpp::export]]
+void arg_testRef() {
+  double y = 1;
+  vector<double> z(2);
+  z[0] = 1; z[1] = 2;
+  
+  valCRef(y);
+  cout << y << endl;
+  
+  vecCRef(z);
+  cout << z[0] << " " << z[1] << endl;
+}
+```
+
+```{r}
+arg_testRef();
+```
+
+## 5. Reference and pointers in C++
+
+Below are the examples code to understand how reference and pointer type works.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <iostream>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void ref_ptr_test1() {
+  int i = 1;
+  int& ri = i;
+  int* pi = &i;
+  int vi = i;
+  cout << i << "\t" << (void*)&i << endl;
+  cout << ri << "\t" << (void*)&ri << endl;
+  cout << *pi << "\t" << (void*)pi << endl;
+  cout << vi << "\t" << (void*)&vi << endl << endl;
+  ++i;
+  cout << i << "\t" << (void*)&i << endl;
+  cout << ri << "\t" << (void*)&ri << endl;
+  cout << *pi << "\t" << (void*)pi << endl;
+  cout << vi << "\t" << (void*)&vi << endl << endl;
+  ri = vi;
+  cout << i << "\t" << (void*)&i << endl;
+  cout << ri << "\t" << (void*)&ri << endl;
+  cout << *pi << "\t" << (void*)pi << endl;
+  cout << vi << "\t" << (void*)&vi << endl << endl;
+}
+```
+
+```{r}
+ref_ptr_test1()
+```
+
+This is an example of modifying the address that a pointer refers to.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <iostream>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void ref_ptr_test2() {
+  int i = 1;
+  int& ri = i;
+  int* pi = &i;
+  int vi = i;
+  ++i;
+  cout << i << "\t" << (void*)&i << endl;
+  cout << ri << "\t" << (void*)&ri << endl;
+  cout << *pi << "\t" << (void*)pi << endl;
+  cout << vi << "\t" << (void*)&vi << endl << endl;
+  pi = &vi;
+  ++i;
+  cout << i << "\t" << (void*)&i << endl;
+  cout << ri << "\t" << (void*)&ri << endl;
+  cout << *pi << "\t" << (void*)pi << endl;
+  cout << vi << "\t" << (void*)&vi << endl << endl;
+}
+```
+
+```{r}
+ref_ptr_test2()
+```
+This is an example of modifying
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <iostream>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void ref_ptr_test3() {
+  int i = 1;
+  int& ri = i;
+  int* pi = &i;
+  int vi = i;
+  ++i;
+  cout << i << "\t" << (void*)&i << endl;
+  cout << ri << "\t" << (void*)&ri << endl;
+  cout << *pi << "\t" << (void*)pi << endl;
+  cout << vi << "\t" << (void*)&vi << endl << endl;
+  *pi = vi;
+  ++i;
+  cout << i << "\t" << (void*)&i << endl;
+  cout << ri << "\t" << (void*)&ri << endl;
+  cout << *pi << "\t" << (void*)pi << endl;
+  cout << vi << "\t" << (void*)&vi << endl << endl;
+}
+```
+
+```{r}
+ref_ptr_test3()
+```
+
+## 6. Value, reference, and pointers for strings in C++
+
+Below are the examples of using values, references, and pointers for strings in C++
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <iostream>
+#include <string>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void str_test1() {
+  string  s = "Hello";
+  string& r = s;
+  string* p = &s;
+  string  v = s;
+  s += ", world!";
+  cout << s << "\t" << (void*)&s << endl;
+  cout << r << "\t" << (void*)&r << endl;
+  cout << *p << "\t" << (void*)p << "\t" << (void*)&p << endl;
+  cout << v << "\t" << (void*)&v << endl;
+}
+```
+
+```{r}
+str_test1()
+```
+  
+```{Rcpp}
+#include <Rcpp.h>
+#include <iostream>
+#include <string>
+using namespace Rcpp;
+using namespace std;
+// [[Rcpp::export]]
+void str_test2() {
+  const char*  s  = "Hello";
+  const char*& r = s;
+  const char** p = &s;
+  const char*  v = s;
+
+  cout << s << "\t" << (void*)s << "\t" << (void*)&s << endl;
+  cout << r << "\t" << (void*)r << "\t" << (void*)&r << endl;
+  cout << *p << "\t" << (void*)*p << "\t" << (void*)p << "\t" << (void*)&p << endl;
+  cout << v << "\t" << (void*)v << "\t" << (void*)&v << endl;
+}
+```
+
+```{r}
+str_test2()
+```

@@ -1,0 +1,51 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter* (Mac OS X) or *Ctrl+Shift+Enter* (Windows). 
+
+## 1. Random number generator in R.
+
+
+```{r}
+runif(10)
+rbinom(10,1,0.5)
+set.seed(12345)
+runif(10)
+rbinom(10,1,0.5)
+set.seed(12345)
+runif(10)
+rbinom(10,1,0.5)
+```
+
+## 2. Random number generator in Rcpp.
+
+```{Rcpp}
+#include <Rcpp.h>
+#include <cstdio>
+using namespace Rcpp;
+// [[Rcpp::export]]
+void foo() {
+  // create a vector of random numbers and print
+  NumericVector x = runif(10);
+  for(int i=0; i < 10; ++i) printf("%.5lf ",x[i]);
+  printf("\n");
+  NumericVector y = rbinom(10,1,0.5);
+  for(int i=0; i < 10; ++i) printf("%d ",(int)y[i]);
+  printf("\n");
+  // create a single random number and print
+  printf("%.5lf\n", R::runif(0,1));
+  printf("%d\n",(int)R::rbinom(1,0.5));
+}
+```
+
+```{r}
+foo()
+set.seed(12345)
+foo()
+set.seed(12345)
+foo()
+```
